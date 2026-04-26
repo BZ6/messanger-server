@@ -9,7 +9,7 @@ User=meshtastic
 Group=meshtastic
 WorkingDirectory=/opt/meshtastic
 Environment=PYTHONPATH=/opt/meshtastic
-ExecStart=/usr/bin/python3 -m services.recommendation_engine.router
+ExecStart=/opt/meshtastic/venv/bin/python3 -m services.recommendation_engine.router
 Restart=on-failure
 RestartSec=10
 

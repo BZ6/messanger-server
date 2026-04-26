@@ -28,7 +28,7 @@ scp -r . user@your_server_ip:/opt/meshtastic
 
 Альтернативно, если код находится в Git-репозитории:
 ```bash
-git clone https://your-repo-url.com/meshtastic-server.git /opt/meshtastic
+git clone https://github.com/BZ6/messanger-server.git /opt/meshtastic
 ```
 
 ## Шаг 3: Настройка виртуального окружения Python и установка зависимостей
