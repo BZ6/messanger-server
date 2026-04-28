@@ -351,3 +351,26 @@ def test_process_text_message_uses_ml_path(monkeypatch):
     # ML returned A→B→C, even though Dijkstra would pick A→D→C
     assert rec['hops'] == ['A', 'B', 'C']
     assert rec['use_next_hop'] == 'B'
+
+
+def test_find_route_direct_beats_server():
+    """Strong direct RF link is preferred over the SERVER relay.
+    Direct SNR=9 → weight=1.0; SERVER edges SNR=2 → weight=8.0 each (total 16.0).
+    Dijkstra must pick the direct path."""
+    conn = db.connect()
+    cur  = conn.cursor()
+    now  = int(time.time())
+    for nid in ('!000003e9', '!000003ea'):
+        cur.execute("INSERT OR REPLACE INTO nodes VALUES (?,?,?,?)", (nid, nid, nid, now))
+    cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", ('!000003e9', '!000003ea', 9.0, now))
+    cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", ('SERVER', '!000003e9', 2.0, now))
+    cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", ('SERVER', '!000003ea', 2.0, now))
+    conn.commit()
+    conn.close()
+
+    svc = router.RoutingService()
+    path, error = svc.find_route('!000003e9', '!000003ea')
+    
+    assert error is None
+    assert 'SERVER' not in path
+    assert path == ['!000003e9', '!000003ea']
