@@ -26,7 +26,8 @@ def init_db():
                     (from_node TEXT,
                      to_node TEXT,
                      snr REAL,
-                     last_seen INTEGER)''')
+                     last_seen INTEGER,
+                     UNIQUE(from_node, to_node))''')
     conn.commit()
     conn.close()
 

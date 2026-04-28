@@ -1,4 +1,4 @@
-import os, sys, time, pickle
+import os, sys, time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 import services.shared.db as db
@@ -6,102 +6,106 @@ import services.graph_service.graph_api as graph_api
 
 TEST_DB = os.path.join(os.path.expanduser('~'), 'temp', 'graph_test.db')
 
+
+def _reset_graph_cache():
+    """Force graph_api to rebuild from DB on the next call."""
+    graph_api._graph_cache = None
+
+
 def setup_function():
     db.DB_PATH = TEST_DB
+    os.makedirs(os.path.dirname(TEST_DB), exist_ok=True)
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
-    conn = db.connect()
-    c = conn.cursor()
-    c.execute("""CREATE TABLE nodes (node_id TEXT PRIMARY KEY, long_name TEXT, short_name TEXT, last_seen INTEGER)""")
-    c.execute("""CREATE TABLE edges (from_node TEXT, to_node TEXT, snr REAL, last_seen INTEGER)""")
-    conn.commit()
-    conn.close()
+    db.init_db()
+    _reset_graph_cache()
+
 
 def teardown_function():
+    _reset_graph_cache()
     if os.path.exists(TEST_DB):
         os.remove(TEST_DB)
-    graph_api.load_graph.cache_clear() if hasattr(graph_api.load_graph, 'cache_clear') else None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _insert(c, nodes=(), edges=()):
+    now = int(time.time())
+    for node_id in nodes:
+        c.execute("INSERT OR REPLACE INTO nodes VALUES (?,?,?,?)", (node_id, node_id, node_id, now))
+    for frm, to, snr in edges:
+        c.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", (frm, to, snr, now))
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 def test_empty_graph_returns_empty_path():
+    _reset_graph_cache()
     assert graph_api.get_shortest_path('ANY', 'TARGET') == []
 
+
 def test_nonexistent_target_returns_empty():
-    tmp = os.path.join(os.path.expanduser('~'), 'temp', 't.db')
-    # Ensure we start with a clean slate
-    if os.path.exists(tmp):
-        os.remove(tmp)
-    db.DB_PATH = tmp
-    db.init_db()
     conn = db.connect()
-    conn.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('SERVER','S','S',int(time.time())))
+    _insert(conn.cursor(), nodes=['SERVER'])
     conn.commit()
     conn.close()
-    graph_api.load_graph.cache_clear() if hasattr(graph_api.load_graph, 'cache_clear') else None
+    graph_api.load_graph(force_refresh=True)
     assert graph_api.get_shortest_path('SERVER', 'X') == []
-    if os.path.exists(tmp):
-        os.remove(tmp)
+
 
 def test_disconnected_target_returns_empty():
-    tmp = os.path.join(os.path.expanduser('~'), 'temp', 'tdb.db')
-    db.DB_PATH = tmp
-    db.init_db()
     conn = db.connect()
-    now = int(time.time())
-    c = conn.cursor()
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('SERVER','S','S',now))
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('A','A','A',now))
-    c.execute("INSERT INTO edges VALUES (?,?,?,?)", ('A','B',8.0,now))
+    _insert(conn.cursor(), nodes=['SERVER', 'A'], edges=[('A', 'B', 8.0)])
     conn.commit()
     conn.close()
-    graph_api.load_graph.cache_clear() if hasattr(graph_api.load_graph, 'cache_clear') else None
+    graph_api.load_graph(force_refresh=True)
+    # SERVER is not connected to A or B, so no path
     assert graph_api.get_shortest_path('SERVER', 'B') == []
-    os.remove(tmp)
+
 
 def test_all_paths_receives_all_nodes():
-    tmp = os.path.join(os.path.expanduser('~'), 'temp', 'tpdb.db')
-    # Ensure we start with a clean slate
-    if os.path.exists(tmp):
-        os.remove(tmp)
-    db.DB_PATH = tmp
-    db.init_db()
     conn = db.connect()
-    now = int(time.time())
-    c = conn.cursor()
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('SERVER','S','S',now))
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('A','A1','A1',now))
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('B','B1','B1',now))
-    c.execute("INSERT INTO edges VALUES (?,?,?,?)", ('SERVER','A',5.0,now))
-    c.execute("INSERT INTO edges VALUES (?,?,?,?)", ('SERVER','B',7.0,now))
+    _insert(conn.cursor(), nodes=['SERVER', 'A', 'B'],
+            edges=[('SERVER', 'A', 5.0), ('SERVER', 'B', 7.0)])
     conn.commit()
     conn.close()
-    # Force a refresh of the graph cache to ensure we get the latest data
     graph_api.load_graph(force_refresh=True)
     paths = graph_api.get_all_paths()
     assert 'A' in paths and 'B' in paths
-    if os.path.exists(tmp):
-        os.remove(tmp)
+
 
 def test_get_reachable_gateways_for_target_returns_valid_targets():
-    tmp = os.path.join(os.path.expanduser('~'), 'temp', 'rgdb.db')
-    # Ensure we start with a clean slate
-    if os.path.exists(tmp):
-        os.remove(tmp)
-    db.DB_PATH = tmp
-    db.init_db()
     conn = db.connect()
-    now = int(time.time())
-    c = conn.cursor()
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('SERVER','S','S',now))
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('A','A1','A1',now))
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('B','Beta','B',now))
-    c.execute("INSERT INTO nodes VALUES (?,?,?,?)", ('C','Gamma','C',now))
-    c.execute("INSERT INTO edges VALUES (?,?,?,?)", ('SERVER','A',5.0,now))
-    c.execute("INSERT INTO edges VALUES (?,?,?,?)", ('A','C',6.0,now))
+    _insert(conn.cursor(), nodes=['SERVER', 'A', 'B', 'C'],
+            edges=[('SERVER', 'A', 5.0), ('A', 'C', 6.0)])
     conn.commit()
     conn.close()
-    # Force a refresh of the graph cache to ensure we get the latest data
     graph_api.load_graph(force_refresh=True)
     gateways = graph_api.get_reachable_gateways_for_target('C')
     assert 'A' in gateways
-    if os.path.exists(tmp):
-        os.remove(tmp)
+
+
+def test_get_reachable_gateways_empty_graph():
+    _reset_graph_cache()
+    gateways = graph_api.get_reachable_gateways_for_target('nonexistent')
+    assert isinstance(gateways, list)
+
+
+def test_shortest_path_prefers_high_snr():
+    conn = db.connect()
+    _insert(conn.cursor(), nodes=['A', 'B', 'C', 'D'],
+            edges=[
+                ('A', 'B', 5.0),   # weight 5
+                ('B', 'C', 5.0),   # weight 5  → A→B→C total 10
+                ('A', 'D', 9.0),   # weight 1
+                ('D', 'C', 9.0),   # weight 1  → A→D→C total 2
+            ])
+    conn.commit()
+    conn.close()
+    graph_api.load_graph(force_refresh=True)
+    path = graph_api.get_shortest_path('A', 'C')
+    assert path == ['A', 'D', 'C']
