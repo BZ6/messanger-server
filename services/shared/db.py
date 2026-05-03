@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
-"""Utility services for node registration and graph queries.
-Provides simple functions that operate on the shared SQLite DB used by
-collector.py and router.py. Designed for direct import in tests or other
-Python code; no network server is started here.
-"""
 import os, sqlite3, time
-from typing import List, Tuple, Optional
 
-# Path can be overridden in tests via environment variable or directly
 DB_PATH = os.getenv('MESHTASTIC_DB', '/var/lib/meshtastic/mesh_network.db')
 
 def _connect():
@@ -32,17 +25,12 @@ def init_db():
     conn.close()
 
 def connect():
-    """Public connection function."""
     return _connect()
 
 def ensure_init():
-    # Ensure tables exist without forcing callers to worry
     init_db()
 
-def register_node(node_id: str, long_name: str = '', short_name: str = '') -> None:
-    """Insert or update a node record with the current timestamp.
-    Guarantees uniqueness of ``node_id`` because it is the primary key.
-    """
+def register_node(node_id, long_name='', short_name=''):
     ensure_init()
     ts = int(time.time())
     conn = _connect()
@@ -55,10 +43,7 @@ def register_node(node_id: str, long_name: str = '', short_name: str = '') -> No
     conn.commit()
     conn.close()
 
-def store_edge(from_node: str, to_node: str, snr: Optional[float] = None) -> None:
-    """Store an edge with timestamp.
-    If ``snr`` is None the weight will be calculated later by router.
-    """
+def store_edge(from_node, to_node, snr=None):
     ensure_init()
     ts = int(time.time())
     conn = _connect()
@@ -71,7 +56,7 @@ def store_edge(from_node: str, to_node: str, snr: Optional[float] = None) -> Non
     conn.commit()
     conn.close()
 
-def get_node(node_id: str) -> Optional[Tuple[str, str, str, int]]:
+def get_node(node_id):
     ensure_init()
     conn = _connect()
     cur = conn.cursor()
@@ -80,7 +65,7 @@ def get_node(node_id: str) -> Optional[Tuple[str, str, str, int]]:
     conn.close()
     return row
 
-def get_neighbors(node_id: str) -> List[Tuple[str, Optional[float]]]:
+def get_neighbors(node_id):
     ensure_init()
     conn = _connect()
     cur = conn.cursor()
@@ -89,7 +74,7 @@ def get_neighbors(node_id: str) -> List[Tuple[str, Optional[float]]]:
     conn.close()
     return [(r[0], r[1]) for r in rows]
 
-def list_nodes() -> List[Tuple[str, str, str, int]]:
+def list_nodes():
     ensure_init()
     conn = _connect()
     cur = conn.cursor()
@@ -98,7 +83,7 @@ def list_nodes() -> List[Tuple[str, str, str, int]]:
     conn.close()
     return rows
 
-def list_edges() -> List[Tuple[str, str, Optional[float], int]]:
+def list_edges():
     ensure_init()
     conn = _connect()
     cur = conn.cursor()

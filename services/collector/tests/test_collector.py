@@ -21,10 +21,6 @@ def teardown_function():
         os.remove(TEST_DB)
 
 
-# ---------------------------------------------------------------------------
-# handle_node_info
-# ---------------------------------------------------------------------------
-
 def test_handle_node_info():
     data = {'id': '!000003e9', 'longname': 'Long', 'shortname': 'S'}
     collector.handle_node_info('!000003e9', data, int(time.time()))
@@ -50,7 +46,6 @@ def test_handle_node_info_update():
 
 
 def test_handle_node_info_missing_fields():
-    # Should not raise even with empty data
     collector.handle_node_info('!000000ff', {}, int(time.time()))
     conn = sqlite3.connect(TEST_DB)
     row = conn.execute('SELECT long_name, short_name FROM nodes WHERE node_id=?', ('!000000ff',)).fetchone()
@@ -58,13 +53,9 @@ def test_handle_node_info_missing_fields():
     assert row == ('N/A', 'N/A')
 
 
-# ---------------------------------------------------------------------------
-# handle_neighbor_info
-# ---------------------------------------------------------------------------
-
 def test_handle_neighbor_info():
     ts = int(time.time())
-    data = {'neighbors': [{'node_id': 0x3EA, 'snr': 7.5}]}  # integer node_id
+    data = {'neighbors': [{'node_id': 0x3EA, 'snr': 7.5}]}
     collector.handle_neighbor_info('!000003e9', data, ts)
     conn = sqlite3.connect(TEST_DB)
     row = conn.execute(
@@ -97,10 +88,6 @@ def test_handle_neighbor_info_empty():
     assert len(rows) == 0
 
 
-# ---------------------------------------------------------------------------
-# on_message – full pipeline
-# ---------------------------------------------------------------------------
-
 class _FakeMsg:
     def __init__(self, d):
         self.payload = json.dumps(d).encode()
@@ -120,7 +107,6 @@ def test_on_message_nodeinfo():
     row = db.get_node('!000003e9')
     assert row is not None
     assert row[1] == 'Alpha'
-    # SERVER→sender gateway edge must be stored
     conn = sqlite3.connect(TEST_DB)
     gw = conn.execute('SELECT * FROM edges WHERE from_node=? AND to_node=?',
                       ('SERVER', '!000003e9')).fetchone()
@@ -149,14 +135,13 @@ def test_on_message_neighborinfo():
 
 def test_on_message_unknown_type_is_ignored():
     msg = _FakeMsg({'from': 1, 'sender': '!00000001', 'timestamp': 0, 'type': 'position', 'payload': {}})
-    # Should not raise and should only store the gateway edge
     collector.on_message(None, None, msg)
     conn = sqlite3.connect(TEST_DB)
     rows = conn.execute('SELECT * FROM nodes').fetchall()
     conn.close()
-    assert len(rows) == 0  # no node was inserted
+    assert len(rows) == 0
 
 
 def test_on_message_no_from_is_ignored():
     msg = _FakeMsg({'sender': '!00000001', 'type': 'nodeinfo', 'payload': {}})
-    collector.on_message(None, None, msg)  # must not raise
+    collector.on_message(None, None, msg)

@@ -1,22 +1,10 @@
 #!/usr/bin/env python3
-"""
-Routing / Recommendation Engine
-
-Listens to msh/+/json/+/+ (same feed as the collector).
-When a TEXT message arrives between two specific nodes, computes the
-shortest path through the known mesh graph and publishes a routing
-recommendation to routing/recommendation/<source_nodeId> per CONTRACT v0.3.
-
-Recommendation payload:
-  { "for_destination": "!...", "use_next_hop": "!...", "ttl_s": 60, "score": 0.85 }
-"""
 import json
 import logging
 import os
 import signal
 import sys
 import time
-from typing import List, Optional, Tuple
 
 import networkx as nx
 import paho.mqtt.client as mqtt
@@ -30,36 +18,28 @@ logger = logging.getLogger("recommendation_engine")
 MQTT_BROKER     = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT       = int(os.getenv("MQTT_PORT", "1883"))
 SUBSCRIBE_TOPIC = "msh/+/json/+/+"
-BROADCAST_ADDR  = 4294967295   # 0xFFFFFFFF – mesh broadcast, skip
+BROADCAST_ADDR  = 4294967295
 GRAPH_REFRESH_S = int(os.getenv("GRAPH_REFRESH_INTERVAL", "30"))
 
 SERVER_NODE_ID  = "SERVER"
 
-# ML model server — empty string disables ML and always uses Dijkstra
 ML_SERVER  = os.getenv("ML_SERVER", "")
 ML_TIMEOUT = float(os.getenv("ML_TIMEOUT", "2.0"))
 
 
-# ---------------------------------------------------------------------------
-# RoutingService – pure graph logic, no MQTT
-# ---------------------------------------------------------------------------
-
 class RoutingService:
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path=None):
         if db_path is not None:
             db.DB_PATH = db_path
         self.db_path = db.DB_PATH
         db.init_db()
-        graph_api.load_graph(force_refresh=True)   # прогреть кэш при старте
+        graph_api.load_graph(force_refresh=True)
 
     @property
-    def graph(self) -> nx.Graph:
-        """Граф из graph_api — единственный источник истины."""
+    def graph(self):
         return graph_api.load_graph()
 
-    def find_route(
-        self, source_id: str, target_id: str
-    ) -> Tuple[Optional[List[str]], Optional[str]]:
+    def find_route(self, source_id, target_id):
         G = graph_api.load_graph()
         if source_id not in G.nodes:
             return None, f"Источник {source_id} не найден в графе"
@@ -83,7 +63,7 @@ class RoutingService:
             G.number_of_edges(),
         )
 
-    def get_graph_stats(self) -> dict:
+    def get_graph_stats(self):
         G = graph_api.load_graph()
         n = G.number_of_nodes()
         if n == 0:
@@ -96,12 +76,7 @@ class RoutingService:
         }
 
 
-# ---------------------------------------------------------------------------
-# Message processing – extracted for unit-testability
-# ---------------------------------------------------------------------------
-
-def _to_hex(node_id) -> str:
-    """Convert integer node ID to !hexhex format."""
+def _to_hex(node_id):
     if isinstance(node_id, int):
         return f"!{node_id:08x}"
     if isinstance(node_id, str) and node_id.startswith("!"):
@@ -109,8 +84,7 @@ def _to_hex(node_id) -> str:
     return str(node_id)
 
 
-def _path_score(svc: RoutingService, path: List[str]) -> float:
-    """Confidence score ∈ (0, 1]: higher is better.  1 / (1 + total_weight)."""
+def _path_score(svc, path):
     try:
         total = nx.path_weight(svc.graph, path, weight="weight")
         return round(1.0 / (1.0 + total), 3)
@@ -118,11 +92,7 @@ def _path_score(svc: RoutingService, path: List[str]) -> float:
         return 0.5
 
 
-def _ml_route(svc: RoutingService, source: str, dest: str) -> Optional[List[str]]:
-    """
-    Ask the ML model server for a route.  Returns path list or None on any failure.
-    Falls back to Dijkstra when ML_SERVER is not configured or the server is down.
-    """
+def _ml_route(svc, source, dest):
     if not ML_SERVER:
         return None
     try:
@@ -138,7 +108,6 @@ def _ml_route(svc: RoutingService, source: str, dest: str) -> Optional[List[str]
         )
         if resp.status_code == 200:
             path = resp.json().get("path")
-            # Basic sanity: path must start at source and end at dest
             if (isinstance(path, list) and len(path) >= 2
                     and path[0] == source and path[-1] == dest):
                 logger.debug("ML route %s→%s: %s", source, dest, path)
@@ -148,19 +117,7 @@ def _ml_route(svc: RoutingService, source: str, dest: str) -> Optional[List[str]
     return None
 
 
-def process_text_message(
-    svc: RoutingService, mqtt_client, payload: dict
-) -> Optional[str]:
-    """
-    Handle one decoded MQTT payload dict.  Returns the published topic, or None.
-
-    payload must have at minimum:
-      { "type": "text", "from": <int|str>, "to": <int|str> }
-
-    Route selection order:
-      1. ML model server (if ML_SERVER is set and responds)
-      2. Dijkstra on the local NetworkX graph (fallback)
-    """
+def process_text_message(svc, mqtt_client, payload):
     if payload.get("type") != "text":
         return None
 
@@ -169,14 +126,12 @@ def process_text_message(
     if from_raw is None or to_raw is None:
         return None
 
-    # Skip broadcasts
     if isinstance(to_raw, int) and to_raw == BROADCAST_ADDR:
         return None
 
     source_hex = _to_hex(from_raw)
     dest_hex   = _to_hex(to_raw)
 
-    # Try ML model first; fall back to Dijkstra on any failure
     path   = _ml_route(svc, source_hex, dest_hex)
     method = "ml"
     if path is None:
@@ -191,15 +146,12 @@ def process_text_message(
     if len(path) < 2:
         return None
 
-    # Full computed path as an ordered array of node IDs from source to destination.
-    # The receiving node reads `hops` and uses each entry in sequence.
-    # `use_next_hop` is the immediate next hop (path[1]) kept for quick lookup.
     next_hop = path[1]
     score    = _path_score(svc, path)
     recommendation = {
         "for_destination": dest_hex,
-        "hops":            path,          # e.g. ["!000003e9", "!000003eb", "!000003ea"]
-        "use_next_hop":    next_hop,      # convenience shortcut = hops[1]
+        "hops":            path,
+        "use_next_hop":    next_hop,
         "ttl_s":           60,
         "score":           score,
     }
@@ -212,11 +164,7 @@ def process_text_message(
     return topic
 
 
-# ---------------------------------------------------------------------------
-# Standalone service entry-point
-# ---------------------------------------------------------------------------
-
-def main() -> None:
+def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",

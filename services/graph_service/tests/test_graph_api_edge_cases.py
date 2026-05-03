@@ -8,7 +8,6 @@ TEST_DB = os.path.join(os.path.expanduser('~'), 'temp', 'graph_test.db')
 
 
 def _reset_graph_cache():
-    """Force graph_api to rebuild from DB on the next call."""
     graph_api._graph_cache = None
 
 
@@ -27,10 +26,6 @@ def teardown_function():
         os.remove(TEST_DB)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
 def _insert(c, nodes=(), edges=()):
     now = int(time.time())
     for node_id in nodes:
@@ -38,10 +33,6 @@ def _insert(c, nodes=(), edges=()):
     for frm, to, snr in edges:
         c.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", (frm, to, snr, now))
 
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
 
 def test_empty_graph_returns_empty_path():
     _reset_graph_cache()
@@ -63,7 +54,6 @@ def test_disconnected_target_returns_empty():
     conn.commit()
     conn.close()
     graph_api.load_graph(force_refresh=True)
-    # SERVER is not connected to A or B, so no path
     assert graph_api.get_shortest_path('SERVER', 'B') == []
 
 
@@ -99,10 +89,10 @@ def test_shortest_path_prefers_high_snr():
     conn = db.connect()
     _insert(conn.cursor(), nodes=['A', 'B', 'C', 'D'],
             edges=[
-                ('A', 'B', 5.0),   # weight 5
-                ('B', 'C', 5.0),   # weight 5  → A→B→C total 10
-                ('A', 'D', 9.0),   # weight 1
-                ('D', 'C', 9.0),   # weight 1  → A→D→C total 2
+                ('A', 'B', 5.0),
+                ('B', 'C', 5.0),
+                ('A', 'D', 9.0),
+                ('D', 'C', 9.0),
             ])
     conn.commit()
     conn.close()

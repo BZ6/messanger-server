@@ -23,24 +23,18 @@ def teardown_function():
         os.remove(TEST_DB)
 
 
-# ---------------------------------------------------------------------------
-# DB helpers
-# ---------------------------------------------------------------------------
-
 def _populate():
-    """Square A-B-C-D-A with cross edge B-D (higher SNR = better)."""
     conn = db.connect()
     cur  = conn.cursor()
     now  = int(time.time())
     for nid in ('A', 'B', 'C', 'D'):
         cur.execute("INSERT OR REPLACE INTO nodes VALUES (?,?,?,?)", (nid, nid+'1', nid+'1', now))
-    # edges: (from, to, snr)  weight = max(0.1, 10 - snr)
     for frm, to, snr in [
-        ('A', 'B', 5.0),   # weight 5
-        ('B', 'C', 6.0),   # weight 4
-        ('C', 'D', 7.0),   # weight 3
-        ('D', 'A', 8.0),   # weight 2
-        ('B', 'D', 9.0),   # weight 1  ← best cross edge
+        ('A', 'B', 5.0),
+        ('B', 'C', 6.0),
+        ('C', 'D', 7.0),
+        ('D', 'A', 8.0),
+        ('B', 'D', 9.0),
     ]:
         cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", (frm, to, snr, now))
     conn.commit()
@@ -59,14 +53,9 @@ def _populate_two_components():
     conn.close()
 
 
-# ---------------------------------------------------------------------------
-# RoutingService – graph building and path finding
-# ---------------------------------------------------------------------------
-
 def test_find_route_exists():
     _populate()
     svc = router.RoutingService()
-    # A→C: options A-B-C (5+4=9), A-D-C (2+3=5), A-B-D-C (5+1+3=9)
     path, error = svc.find_route('A', 'C')
     assert error is None
     assert path == ['A', 'D', 'C']
@@ -145,10 +134,6 @@ def test_get_graph_stats():
     assert stats['server_connected'] is False
 
 
-# ---------------------------------------------------------------------------
-# process_text_message – recommendation publishing
-# ---------------------------------------------------------------------------
-
 class _MockMqttClient:
     def __init__(self):
         self.published = []
@@ -167,10 +152,10 @@ def test_process_text_message_publishes_recommendation():
     assert len(client.published) == 1
     rec = client.published[0][1]
     assert rec['for_destination'] == 'C'
-    assert rec['use_next_hop'] == 'D'           # shortest path A→D→C
-    assert rec['hops'] == ['A', 'D', 'C']       # full path as ordered array
-    assert rec['hops'][0] == 'A'                # starts at source
-    assert rec['hops'][-1] == 'C'              # ends at destination
+    assert rec['use_next_hop'] == 'D'
+    assert rec['hops'] == ['A', 'D', 'C']
+    assert rec['hops'][0] == 'A'
+    assert rec['hops'][-1] == 'C'
     assert 'ttl_s' in rec
     assert 0 < rec['score'] <= 1
 
@@ -206,7 +191,6 @@ def test_process_text_message_no_route():
 
 
 def test_process_text_message_int_ids_converted_to_hex():
-    """Integer from/to are converted to !hex before graph lookup."""
     conn = db.connect()
     cur  = conn.cursor()
     now  = int(time.time())
@@ -217,7 +201,6 @@ def test_process_text_message_int_ids_converted_to_hex():
     conn.close()
     svc    = router.RoutingService()
     client = _MockMqttClient()
-    # from=1001 (0x3e9), to=1002 (0x3ea)
     payload = {'type': 'text', 'from': 0x3E9, 'to': 0x3EA}
     topic = router.process_text_message(svc, client, payload)
     assert topic == 'routing/recommendation/!000003e9'
@@ -228,16 +211,12 @@ def test_process_text_message_int_ids_converted_to_hex():
 
 
 def test_find_route_via_server():
-    """SERVER acts as a relay with small weight (SNR=100 → weight=0.1).
-    Routing through SERVER is valid and often preferred over weak RF links."""
     conn = db.connect()
     cur  = conn.cursor()
     now  = int(time.time())
     for nid in ('!000003e9', '!000003ea'):
         cur.execute("INSERT OR REPLACE INTO nodes VALUES (?,?,?,?)", (nid, nid, nid, now))
-    # Weak direct RF edge (SNR=2 → weight=8)
     cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", ('!000003e9', '!000003ea', 2.0, now))
-    # Server gateway edges (SNR=100 → weight=0.1 each)
     cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", ('SERVER', '!000003e9', 100.0, now))
     cur.execute("INSERT OR REPLACE INTO edges VALUES (?,?,?,?)", ('SERVER', '!000003ea', 100.0, now))
     conn.commit()
@@ -245,17 +224,12 @@ def test_find_route_via_server():
     svc = router.RoutingService()
     path, error = svc.find_route('!000003e9', '!000003ea')
     assert error is None
-    # Via SERVER: 0.1 + 0.1 = 0.2 < direct 8.0 — SERVER path is correctly preferred
     assert 'SERVER' in path
     assert path == ['!000003e9', 'SERVER', '!000003ea']
 
 
-# ---------------------------------------------------------------------------
-# ML model server integration – _ml_route fallback behaviour
-# ---------------------------------------------------------------------------
-
 class _MockResponse:
-    def __init__(self, status_code: int, body: dict):
+    def __init__(self, status_code, body):
         self.status_code = status_code
         self._body = body
 
@@ -264,7 +238,6 @@ class _MockResponse:
 
 
 def test_ml_route_disabled_when_no_server(monkeypatch):
-    """ML_SERVER='' means _ml_route always returns None (Dijkstra used)."""
     _populate()
     monkeypatch.setattr(router, 'ML_SERVER', '')
     svc    = router.RoutingService()
@@ -273,7 +246,6 @@ def test_ml_route_disabled_when_no_server(monkeypatch):
 
 
 def test_ml_route_returns_path_on_200(monkeypatch):
-    """Valid 200 response with correct endpoints is accepted."""
     _populate()
     monkeypatch.setattr(router, 'ML_SERVER', 'http://fake-ml')
     monkeypatch.setattr(
@@ -286,7 +258,6 @@ def test_ml_route_returns_path_on_200(monkeypatch):
 
 
 def test_ml_route_rejected_on_wrong_endpoints(monkeypatch):
-    """Path with wrong source/target is rejected → returns None."""
     _populate()
     monkeypatch.setattr(router, 'ML_SERVER', 'http://fake-ml')
     monkeypatch.setattr(
@@ -299,7 +270,6 @@ def test_ml_route_rejected_on_wrong_endpoints(monkeypatch):
 
 
 def test_ml_route_fallback_on_503(monkeypatch):
-    """503 from ML server → _ml_route returns None → Dijkstra used."""
     _populate()
     monkeypatch.setattr(router, 'ML_SERVER', 'http://fake-ml')
     monkeypatch.setattr(
@@ -310,7 +280,6 @@ def test_ml_route_fallback_on_503(monkeypatch):
     client = _MockMqttClient()
     payload = {'type': 'text', 'from': 'A', 'to': 'C'}
     topic  = router.process_text_message(svc, client, payload)
-    # Dijkstra fallback must still publish a recommendation
     assert topic == 'routing/recommendation/A'
     assert len(client.published) == 1
     rec = client.published[0][1]
@@ -318,7 +287,6 @@ def test_ml_route_fallback_on_503(monkeypatch):
 
 
 def test_ml_route_fallback_on_connection_error(monkeypatch):
-    """Network error → _ml_route returns None → Dijkstra used."""
     _populate()
     monkeypatch.setattr(router, 'ML_SERVER', 'http://fake-ml')
 
@@ -335,7 +303,6 @@ def test_ml_route_fallback_on_connection_error(monkeypatch):
 
 
 def test_process_text_message_uses_ml_path(monkeypatch):
-    """When ML returns a valid path it is published (not the Dijkstra path)."""
     _populate()
     monkeypatch.setattr(router, 'ML_SERVER', 'http://fake-ml')
     monkeypatch.setattr(
@@ -348,15 +315,11 @@ def test_process_text_message_uses_ml_path(monkeypatch):
     topic  = router.process_text_message(svc, client, payload)
     assert topic == 'routing/recommendation/A'
     rec = client.published[0][1]
-    # ML returned A→B→C, even though Dijkstra would pick A→D→C
     assert rec['hops'] == ['A', 'B', 'C']
     assert rec['use_next_hop'] == 'B'
 
 
 def test_find_route_direct_beats_server():
-    """Strong direct RF link is preferred over the SERVER relay.
-    Direct SNR=9 → weight=1.0; SERVER edges SNR=2 → weight=8.0 each (total 16.0).
-    Dijkstra must pick the direct path."""
     conn = db.connect()
     cur  = conn.cursor()
     now  = int(time.time())
@@ -370,7 +333,7 @@ def test_find_route_direct_beats_server():
 
     svc = router.RoutingService()
     path, error = svc.find_route('!000003e9', '!000003ea')
-    
+
     assert error is None
     assert 'SERVER' not in path
     assert path == ['!000003e9', '!000003ea']

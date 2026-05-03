@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""
-collector.py – MQTT Collector for Meshtastic
-
-Subscribes to msh/+/json/+/+ and persists node/edge topology in SQLite.
-Topic format per CONTRACT v0.3: msh/<region>/json/<channel>/<gateway_id>
-
-Recognised message types:
-  nodeinfo     – node metadata  → nodes table
-  neighborinfo – RF neighbours  → edges table
-  any message  – sender field   → SERVER→sender edge (gateway tracking)
-"""
 import json
 import os
 import time
@@ -28,8 +17,7 @@ MQTT_PORT   = int(os.getenv("MQTT_PORT", "1883"))
 SUBSCRIBE_TOPIC = "msh/+/json/+/+"
 
 
-def _to_hex(node_id) -> str:
-    """Convert integer node ID (e.g. 1001) to !hexhex string (e.g. !000003e9)."""
+def _to_hex(node_id):
     if isinstance(node_id, int):
         return f"!{node_id:08x}"
     if isinstance(node_id, str) and node_id.startswith("!"):
@@ -37,13 +25,7 @@ def _to_hex(node_id) -> str:
     return str(node_id)
 
 
-def handle_node_info(node_id: str, data: dict, timestamp: int) -> None:
-    """
-    Persist node metadata.
-
-    data – the inner 'payload' dict from the MQTT message:
-      { "id": "!000003e9", "longname": "Meshtastic 03e9", "shortname": "03e9", ... }
-    """
+def handle_node_info(node_id, data, timestamp):
     try:
         long_name  = data.get("longname",  "N/A")
         short_name = data.get("shortname", "N/A")
@@ -60,13 +42,7 @@ def handle_node_info(node_id: str, data: dict, timestamp: int) -> None:
         logger.error("NodeInfo error: %s", exc)
 
 
-def handle_neighbor_info(packet_from: str, data: dict, timestamp: int) -> None:
-    """
-    Persist RF edges from a neighborinfo message.
-
-    data – the inner 'payload' dict:
-      { "node_id": 1001, "neighbors": [ {"node_id": 1002, "snr": 7.5}, ... ] }
-    """
+def handle_neighbor_info(packet_from, data, timestamp):
     try:
         neighbors = data.get("neighbors", [])
         if not neighbors:
@@ -88,11 +64,11 @@ def handle_neighbor_info(packet_from: str, data: dict, timestamp: int) -> None:
         logger.error("NeighborInfo error: %s", exc)
 
 
-def on_message(client, userdata, msg) -> None:
+def on_message(client, userdata, msg):
     try:
         payload   = json.loads(msg.payload.decode())
         from_int  = payload.get("from")
-        sender    = payload.get("sender", "")       # gateway that published to MQTT
+        sender    = payload.get("sender", "")
         timestamp = payload.get("timestamp", int(time.time()))
         msg_type  = payload.get("type", "")
         inner     = payload.get("payload", {})
@@ -102,8 +78,6 @@ def on_message(client, userdata, msg) -> None:
 
         packet_from = _to_hex(from_int)
 
-        # Every message arriving over MQTT came through a gateway node.
-        # Record SERVER→sender edge so graph_service can route from the server.
         if sender:
             db.store_edge("SERVER", sender, snr=100.0)
 
@@ -117,7 +91,7 @@ def on_message(client, userdata, msg) -> None:
         logger.error("on_message error: %s", exc)
 
 
-def main() -> None:
+def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
