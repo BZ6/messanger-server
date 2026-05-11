@@ -1,0 +1,47 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.3, pytest-8.3.5, pluggy-1.5.0 -- C:\Users\bogda\AppData\Local\Programs\Python\Python312\python.exe
+cachedir: .pytest_cache
+rootdir: C:\DiskZ\diplom\messanger-server
+plugins: anyio-4.4.0
+collecting ... collected 38 items
+
+services/collector/tests/test_collector.py::test_handle_node_info PASSED [  2%]
+services/collector/tests/test_collector.py::test_handle_node_info_update PASSED [  5%]
+services/collector/tests/test_collector.py::test_handle_node_info_missing_fields PASSED [  7%]
+services/collector/tests/test_collector.py::test_handle_neighbor_info PASSED [ 10%]
+services/collector/tests/test_collector.py::test_handle_neighbor_info_multiple PASSED [ 13%]
+services/collector/tests/test_collector.py::test_handle_neighbor_info_empty PASSED [ 15%]
+services/collector/tests/test_collector.py::test_on_message_nodeinfo PASSED [ 18%]
+services/collector/tests/test_collector.py::test_on_message_neighborinfo PASSED [ 21%]
+services/collector/tests/test_collector.py::test_on_message_unknown_type_is_ignored PASSED [ 23%]
+services/collector/tests/test_collector.py::test_on_message_no_from_is_ignored PASSED [ 26%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_empty_graph_returns_empty_path PASSED [ 28%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_nonexistent_target_returns_empty PASSED [ 31%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_disconnected_target_returns_empty PASSED [ 34%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_all_paths_receives_all_nodes PASSED [ 36%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_get_reachable_gateways_for_target_returns_valid_targets PASSED [ 39%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_get_reachable_gateways_empty_graph PASSED [ 42%]
+services/graph_service/tests/test_graph_api_edge_cases.py::test_shortest_path_prefers_high_snr PASSED [ 44%]
+services/recommendation_engine/tests/test_router.py::test_find_route_exists PASSED [ 47%]
+services/recommendation_engine/tests/test_router.py::test_find_route_direct_edge PASSED [ 50%]
+services/recommendation_engine/tests/test_router.py::test_find_route_same_node PASSED [ 52%]
+services/recommendation_engine/tests/test_router.py::test_find_route_missing_source PASSED [ 55%]
+services/recommendation_engine/tests/test_router.py::test_find_route_missing_target PASSED [ 57%]
+services/recommendation_engine/tests/test_router.py::test_find_route_no_path PASSED [ 60%]
+services/recommendation_engine/tests/test_router.py::test_update_graph_refreshes PASSED [ 63%]
+services/recommendation_engine/tests/test_router.py::test_get_graph_stats PASSED [ 65%]
+services/recommendation_engine/tests/test_router.py::test_process_text_message_publishes_recommendation PASSED [ 68%]
+services/recommendation_engine/tests/test_router.py::test_process_text_message_skips_broadcast PASSED [ 71%]
+services/recommendation_engine/tests/test_router.py::test_process_text_message_skips_non_text PASSED [ 73%]
+services/recommendation_engine/tests/test_router.py::test_process_text_message_no_route PASSED [ 76%]
+services/recommendation_engine/tests/test_router.py::test_process_text_message_int_ids_converted_to_hex PASSED [ 78%]
+services/recommendation_engine/tests/test_router.py::test_find_route_via_server PASSED [ 81%]
+services/recommendation_engine/tests/test_router.py::test_ml_route_disabled_when_no_server PASSED [ 84%]
+services/recommendation_engine/tests/test_router.py::test_ml_route_returns_path_on_200 PASSED [ 86%]
+services/recommendation_engine/tests/test_router.py::test_ml_route_rejected_on_wrong_endpoints PASSED [ 89%]
+services/recommendation_engine/tests/test_router.py::test_ml_route_fallback_on_503 PASSED [ 92%]
+services/recommendation_engine/tests/test_router.py::test_ml_route_fallback_on_connection_error PASSED [ 94%]
+services/recommendation_engine/tests/test_router.py::test_process_text_message_uses_ml_path PASSED [ 97%]
+services/recommendation_engine/tests/test_router.py::test_find_route_direct_beats_server PASSED [100%]
+
+============================= 38 passed in 1.34s ==============================
