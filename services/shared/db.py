@@ -83,11 +83,14 @@ def list_nodes():
     conn.close()
     return rows
 
-def list_edges():
+def list_edges(cutoff: int | None = None):
     ensure_init()
     conn = _connect()
     cur = conn.cursor()
-    cur.execute('SELECT * FROM edges')
+    if cutoff is not None:
+        cur.execute('SELECT from_node, to_node, snr, last_seen FROM edges WHERE last_seen > ?', (cutoff,))
+    else:
+        cur.execute('SELECT * FROM edges')
     rows = cur.fetchall()
     conn.close()
     return rows

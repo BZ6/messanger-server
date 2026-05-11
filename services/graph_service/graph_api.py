@@ -10,20 +10,19 @@ _graph_cache = None
 
 
 def _load_graph_from_db():
-    G = nx.Graph()
-
-    conn = sqlite3.connect(db.DB_PATH)
-    cur  = conn.cursor()
     cutoff = int(time.time() - 7 * 86400)
-    cur.execute(
-        "SELECT from_node, to_node, snr, last_seen FROM edges WHERE last_seen > ?",
-        (cutoff,))
-    for frm, to, snr, _ in cur.fetchall():
+    edges = db.list_edges(cutoff)
+    G = _build_graph(edges)
+    return G
+
+
+def _build_graph(edges):
+    G = nx.Graph()
+    for frm, to, snr, _ in edges:
         if not frm or not to:
             continue
         weight = max(0.1, 10 - snr) if snr is not None else 1.0
         G.add_edge(frm, to, weight=weight, snr=snr)
-    conn.close()
     return G
 
 

@@ -29,14 +29,7 @@ def handle_node_info(node_id, data, timestamp):
     try:
         long_name  = data.get("longname",  "N/A")
         short_name = data.get("shortname", "N/A")
-        conn = db.connect()
-        c = conn.cursor()
-        c.execute(
-            "INSERT OR REPLACE INTO nodes (node_id, long_name, short_name, last_seen) VALUES (?, ?, ?, ?)",
-            (node_id, long_name, short_name, timestamp),
-        )
-        conn.commit()
-        conn.close()
+        db.register_node(node_id, long_name, short_name)
         logger.debug("Node updated: %s (%s)", node_id, long_name)
     except Exception as exc:
         logger.error("NodeInfo error: %s", exc)
